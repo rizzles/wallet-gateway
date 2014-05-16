@@ -9,6 +9,8 @@ import tornado.options
 import tornado.httpserver
 import tornado.escape
 import tornado.websocket
+import tornado.gen
+import tornado.httpclient
 
 from variables import *
 
@@ -16,7 +18,7 @@ class Application(tornado.web.Application):
     def __init__(self):
         handlers = [
             (r"/", MainHandler),
-            (r"/max_address", MaxAddressHandler),
+            (r"/new_address/(\w+)", AddressHandler),
             (r"/max_transaction/(\w+)", MaxTransactionHandler),
         ]
         settings = dict(
@@ -31,11 +33,12 @@ class Application(tornado.web.Application):
         )
         tornado.web.Application.__init__(self, handlers, **settings)
         
-        self.btcdb = btcdb
-        self.maxdb = maxdb
+        self.mongodb = mongodb
 
         self.btcwallet = btcwallet
         self.maxwallet = maxwallet
+        self.ltcwallet = ltcwallet
+        self.dogewallet = dogewallet
         
 
 class BaseHandler(tornado.web.RequestHandler):
@@ -43,20 +46,24 @@ class BaseHandler(tornado.web.RequestHandler):
         return None
 
     @property
-    def btcdb(self):
-        return self.application.btcdb
-
-    @property
-    def maxdb(self):
-        return self.application.maxdb
+    def mongodb(self):
+        return self.application.mongodb
 
     @property
     def maxwallet(self):
         return self.application.maxwallet
 
     @property
-    def btcdb(self):
-        return self.application.btcdb
+    def btcwallet(self):
+        return self.application.btcwallet
+
+    @property
+    def dogewallet(self):
+        return self.application.dogewallet
+
+    @property
+    def ltcwallet(self):
+        return self.application.ltcwallet
 
 
 class MainHandler(BaseHandler):
@@ -65,18 +72,36 @@ class MainHandler(BaseHandler):
         self.write(text)
 
 
-class MaxAddressHandler(BaseHandler):
-    def get(self):
-        address = self.maxwallet.getnewaddress()
+class AddressHandler(BaseHandler):
+    def get(self, coin):
+        if coin == 'btc':
+            #address = self.btcwallet.getnewaddress()
+            address = "1DogUco8GeDDGCkXb2R4GXWZPxfjDFov3g"
+        elif coin == 'ltc':
+            #address = self.ltcwallet.getnewaddress()
+            address = "LdUrUvSo8wQsuAaUj4H2BGW7UumjeZ3gXG"
+        elif coin == 'doge':
+            #address = self.dogewallet.getnewaddress()
+            address = "D9SPWsfm8GfLCFf4JoQsEfRRNJwBDAxoEx"
+        elif coin == 'max':
+            #address = self.maxwallet.getnewaddress()
+            address = "mdAtks9Cgthoj2MmQ5zGw3DdJjHEKjFN1U"
         self.write(address)
 
 
 class MaxTransactionHandler(BaseHandler):
+    @tornado.web.asynchronous
+    @tornado.gen.engine
     def get(self, txid):
-        print txid
         trans = maxwallet.gettransaction(txid)
-        trans['address'] = x['address']
-        maxdb.transactions.insert(trans)
+        print trans
+        trans['address'] = trans['details'][0]['address']
+        trans['currency'] = 'max'
+        mongodb.transactions.insert(trans)
+        
+        client = tornado.httpclient.AsyncHTTPClient()
+        response = yield tornado.gen.Task(client.fetch, 'http://ec2-54-221-32-214.compute-1.amazonaws.com:8000/transaction?address=%s&currency=max'%address)
+        self.finish()
 
 
 def main():
